@@ -1,1 +1,68 @@
-<!doctype html><html lang="fr"><meta charset="utf-8"><title>Etalon, registre</title><body><h1>Etalon</h1><p>Registre public des audits d'environnements. Premières entrées à venir.</p></body></html>
+<!doctype html><html lang="fr"><meta charset="utf-8"><title>Registre Etalon</title><h1>Registre Etalon</h1><table><tr><th>Environnement</th><th>Verdict</th><th>Gravité</th><th>Script de preuve</th><th>Rejouer</th></tr>
+<tr><td>deep_swe</td><td colspan="4">contrôlé, divulgation en cours</td></tr>
+<tr><td>lisanbench</td><td>faille</td><td>majeure</td><td><pre>import json, re, string
+import requests
+import os
+import harness, lisanbench
+
+# Seul le service distant est remplacé : requests.get lit words_alpha.txt (copie locale du fichier dwyl). Le barème reste celui de l&#x27;env.
+_TXT = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), &quot;words_alpha.txt&quot;), encoding=&quot;utf-8&quot;).read()
+
+
+class _Rep:
+    text = _TXT
+
+
+requests.get = lambda *a, **k: _Rep()
+env = lisanbench.load_environment()
+ds = env.dataset
+words = set(w.strip().lower() for w in _TXT.splitlines() if w.strip())
+
+
+def nbrs(w):
+    for i in range(len(w)):
+        for c in string.ascii_lowercase:
+            if c != w[i] and w[:i] + c + w[i + 1:] in words:
+                yield w[:i] + c + w[i + 1:]
+        if w[:i] + w[i + 1:] in words:
+            yield w[:i] + w[i + 1:]
+    for i in range(len(w) + 1):
+        for c in string.ascii_lowercase:
+            if w[:i] + c + w[i:] in words:
+                yield w[:i] + c + w[i:]
+
+
+def chain(start, limit=300):
+    path = [start]
+    seen = {start}
+    while len(path) &lt; limit:
+        c = [n for n in nbrs(path[-1]) if n not in seen]
+        if not c:
+            break
+        n = min(c, key=lambda x: sum(1 for y in nbrs(x) if y not in seen))
+        path.append(n)
+        seen.add(n)
+    return path
+
+
+starts = [re.search(r&#x27;Start with the word: &quot;(\w+)&quot;&#x27;, r[&quot;question&quot;]).group(1) for r in ds]
+univ = chain(&quot;cat&quot;)  # UNE seule chaîne, jamais liée au mot de départ
+print(&quot;chaine universelle:&quot;, len(univ), &quot;mots&quot;)
+H = C = 0.0
+touch = 0
+for s in starts:
+    h, _ = harness.score(env, &quot;, &quot;.join(chain(s)), &quot;N/A&quot;)
+    c, _ = harness.score(env, &quot;, &quot;.join(univ), &quot;N/A&quot;)
+    print(s, &quot;honnete=%.2f triche=%.2f&quot; % (h, c))
+    H += h
+    C += c
+    touch += c &gt; h
+n = len(starts)
+H /= n
+C /= n
+print(&quot;moyennes&quot;, H, C)
+print(&quot;VERDICT &quot; + json.dumps({&quot;env&quot;: &quot;lisanbench&quot;, &quot;verdict&quot;: &quot;faille&quot;, &quot;classe&quot;: &quot;note_partielle_volee&quot;,
+                               &quot;honnete&quot;: round(H, 2), &quot;triche&quot;: round(C, 2), &quot;max&quot;: None,
+                               &quot;touchees&quot;: touch, &quot;testees&quot;: n}))
+</pre></td><td><code>python3 repro.py</code></td></tr>
+</table></html>
